@@ -124,3 +124,35 @@ config LIBTUV
 	default n
 	---help---
 		enable libtuv
+
+config ARTIK_SDK
+	bool "ARTIK SDK"
+	default n
+	---help---
+		enable inclusion of the ARTIK SDK
+if ARTIK_SDK
+config ARTIK_SDK_SYSTEMIO
+	bool "ARTIK SDK - System IO library"
+	default n
+	---help---
+		include the System IO library of the ARTIK SDK
+
+config ARTIK_SDK_CONNECTIVITY
+	bool "ARTIK SDK - Connectivity library"
+	default n
+	---help---
+		include the Connectivity library of the ARTIK SDK
+
+config ARTIK_SDK_WIFI
+	bool "ARTIK SDK - Wi-Fi library"
+	default n
+	---help---
+		include the Wi-Fi library of the ARTIK SDK
+
+config ARTIK_SDK_LWM2M
+	bool "ARTIK SDK - LWM2M library"
+	default n
+	---help---
+		include the LWM2M library of the ARTIK SDK
+
+endif

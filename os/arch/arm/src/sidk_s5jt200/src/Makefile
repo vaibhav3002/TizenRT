@@ -53,6 +53,7 @@
 
 -include $(TOPDIR)/Make.defs
 
+DEPPATH = --dep-path .
 CFLAGS += -I$(TOPDIR)/sched
 ASRCS =
 CSRCS = s5jt200_boot.c s5jt200_tash.c
@@ -87,6 +88,7 @@ endif
 
 # boardctl support
 ifeq ($(CONFIG_LIB_BOARDCTL),y)
+DEPPATH += --dep-path $(TOPDIR)/arch
 VPATH += :$(TOPDIR)/arch
 CSRCS += boardctl.c
 endif
@@ -121,7 +123,7 @@ libboard$(LIBEXT): $(OBJS)
 	$(call ARCHIVE, $@, $(OBJS))
 
 .depend: Makefile $(SRCS)
-	$(Q) $(MKDEP) $(CC) -- $(CFLAGS) -- $(SRCS) >Make.dep
+	$(Q) $(MKDEP) $(DEPPATH) $(CC) -- $(CFLAGS) -- $(SRCS) >Make.dep
 	$(Q) touch $@
 
 depend: .depend

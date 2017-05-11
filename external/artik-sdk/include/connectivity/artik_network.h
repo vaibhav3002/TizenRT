@@ -16,13 +16,13 @@ extern "C" {
 	 *  the Network module.
 	 *
 	 *  \example network_test/artik_network_test.c
+	 *  \example network_test/artik_dhcp_client_test.c
 	 */
 
 	/*!
 	 *  \brief Maximum length for IP Address
 	 *
 	 *  Maximum length allowed for IP Address
-	 *  ip address
 	 */
 #define MAX_IP_ADDRESS_LEN			24
 

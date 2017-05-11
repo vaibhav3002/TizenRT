@@ -18,7 +18,7 @@ extern "C" {
 	 *  requests to remote servers
 	 *
 	 *  \example http_test/artik_http_test.c
-	 *  \example websocket_test/artik_websocket_test.c
+	 *  \example http_test/artik_http_openssl_test.c
 	 */
 
 	/*!

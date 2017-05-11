@@ -156,10 +156,21 @@ typedef int artik_error;
 #define E_MQTT_ERROR		(-18)
 
 /*!
+ *  \brief An error happened on Network service
+ */
+#define E_NETWORK_ERROR		(-7000)
+
+/*!
  *  \brief The API'action is in progress
  */
 #define E_IN_PROGRESS			(-16)
 
+/*!
+ *  \brief Error message definition
+ *
+ *  Structure defining an error and
+ *  its user-friendly message
+ */
 typedef struct {
 	int err;
 	char msg[MAX_ERRR_MSG_LEN];
@@ -193,7 +204,8 @@ static const artik_error_msg_string error_msg_strings[] = {
 	{E_ZIGBEE_NETWORK_EXIST, "Network has existed"},
 	{E_INVALID_VALUE, "Invalid value"},
 	{E_LWM2M_ERROR, "LWM2M error"},
-	{E_MQTT_ERROR, "MQTT error"}
+	{E_MQTT_ERROR, "MQTT error"},
+	{E_NETWORK_ERROR, "Network error"}
 };
 
 static const char *error_msg_null = "null";

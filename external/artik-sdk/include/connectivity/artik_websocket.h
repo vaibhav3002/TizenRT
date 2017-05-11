@@ -18,6 +18,8 @@ extern "C" {
 	 *  websocket client to remote servers
 	 *
 	 *  \example websocket_test/artik_websocket_test.c
+	 *  \example websocket_test/artik_websocket_client_test.c
+	 *  \example websocket_test/artik_websocket_cloud_test.c
 	 */
 
 	/*!

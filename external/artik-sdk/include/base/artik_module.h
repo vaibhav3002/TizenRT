@@ -14,6 +14,8 @@ extern "C" {
 	 *
 	 *  Definitions and functions for managing
 	 *  the various modules exposed by the API
+	 *
+	 *  \example module_test/artik_module_test.c
 	 */
 
 	/*!

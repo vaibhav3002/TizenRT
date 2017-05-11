@@ -28,10 +28,6 @@
 #include <artik_wifi.h>
 #endif
 
-#ifdef CONFIG_ARTIK_SDK_LWM2M
-#include <artik_lwm2m.h>
-#endif
-
 /* List of modules available for the platform */
 static const artik_api_module artik_api_a05x_modules[] = {
 #ifdef CONFIG_ARTIK_SDK_SYSTEMIO
@@ -51,9 +47,6 @@ static const artik_api_module artik_api_a05x_modules[] = {
 #endif
 #ifdef CONFIG_ARTIK_SDK_WIFI
 	{ ARTIK_MODULE_WIFI,        (char *)"wifi",     (char *)&wifi_module},
-#endif
-#ifdef CONFIG_ARTIK_SDK_LWM2M
-	{ ARTIK_MODULE_LWM2M,       (char *)"lwm2m",    (char *)&lwm2m_module},
 #endif
 	{ (artik_module_id_t)-1,	NULL,				(char *)NULL},
 };

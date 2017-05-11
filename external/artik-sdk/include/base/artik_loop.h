@@ -10,9 +10,13 @@ extern "C" {
 
 /*! \file artik_loop.h
  *
- *	\brief LOOP module definition
+ *  \brief LOOP module definition
  *
- *	loop for asynchronous
+ *  Definitions and functions for using the loop
+ *  module and working with the SDK's main loop
+ *  and asynchronous mechanisms.
+ *
+ *  \example loop_test/artik_loop_test.c
  */
 
 enum watch_io {

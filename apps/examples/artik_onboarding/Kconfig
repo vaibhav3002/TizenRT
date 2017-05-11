@@ -1,0 +1,20 @@
+config EXAMPLES_ARTIK_ONBOARDING
+	bool "ARTIK Onboarding Service"
+	select ARTIK_SDK
+	select ARTIK_SDK_WIFI
+	select ARTIK_SDK_SYSTEMIO
+	select ARTIK_SDK_CONNECTIVITY
+	select NETUTILS_MDNS
+	select NETUTILS_MDNS_RESPONDER_SUPPORT
+	select NETUTILS_JSON
+	select NETDB_DNSCLIENT
+	select EXAMPLES_NTPCLIENT_TEST
+	default n
+	---help---
+		Install the ARTIK Onboarding service, which
+		allows onboarding the device to Wi-Fi hotspot
+		then to ARTIK Cloud.
+
+config USER_ENTRYPOINT
+	string
+	default "artik_onboarding_main" if ENTRY_ARTIK_ONBOARDING

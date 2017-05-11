@@ -134,12 +134,25 @@ if ARTIK_SDK
 config ARTIK_SDK_SYSTEMIO
 	bool "ARTIK SDK - System IO library"
 	default n
+	select SPI
+	select ADC
+	select GPIO
+	select PWM
+	select S5J_I2C
+	select S5J_SPI
+	select S5J_ADC
+	select S5J_PWM
 	---help---
 		include the System IO library of the ARTIK SDK
 
 config ARTIK_SDK_CONNECTIVITY
 	bool "ARTIK SDK - Connectivity library"
 	default n
+	select NETUTILS_DHCPD
+	select NETUTILS_DHCPC
+	select NETUTILS_WEBSERVER
+	select NETUTILS_WEBSOCKET
+	select NETUTILS_WEBCLIENT
 	---help---
 		include the Connectivity library of the ARTIK SDK
 
@@ -148,11 +161,5 @@ config ARTIK_SDK_WIFI
 	default n
 	---help---
 		include the Wi-Fi library of the ARTIK SDK
-
-config ARTIK_SDK_LWM2M
-	bool "ARTIK SDK - LWM2M library"
-	default n
-	---help---
-		include the LWM2M library of the ARTIK SDK
 
 endif

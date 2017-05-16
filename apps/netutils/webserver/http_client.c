@@ -136,6 +136,7 @@ int http_client_release(struct http_client_t *client)
 		http_client_tls_release(client);
 	}
 #endif
+	close(client->client_fd);
 	HTTP_FREE(client);
 	HTTP_LOGD("Free Client\n");
 	return HTTP_OK;

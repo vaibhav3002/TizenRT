@@ -174,75 +174,82 @@ char *WifiScanResult(void)
 
 int StartDHCPServer(bool start)
 {
-	artik_error ret = S_OK;
-	artik_network_module *network = (artik_network_module *)
-			artik_request_api_module("network");
+    artik_error ret = S_OK;
+    artik_network_module *network = (artik_network_module *)
+            artik_request_api_module("network");
 
-	if (!network) {
-		printf("Network module is not available\n");
-		return -1;
-	}
+    if (!network) {
+        printf("Network module is not available\n");
+        return -1;
+    }
 
     if (start) {
-    	artik_network_dhcp_server_config config;
+        artik_network_dhcp_server_config config;
 
-		if (g_dhcps_handle) {
-	        printf("DHCP server is already started\n");
-	        ret = E_BUSY;
-	        goto exit;
-	    }
+        if (g_dhcps_handle) {
+            printf("DHCP server is already started\n");
+            ret = E_BUSY;
+            goto exit;
+        }
 
-    	config.interface = ARTIK_WIFI;
-    	ret = network->dhcp_server_start(&g_dhcps_handle, &config);
+        config.interface = ARTIK_WIFI;
+        ret = network->dhcp_server_start(&g_dhcps_handle, &config);
         if (ret != S_OK) {
-        	struct in_addr ipaddr;
+            struct in_addr ipaddr;
             ipaddr.s_addr = 0;
             netlib_set_ipv4addr(NET_IFNAME, &ipaddr);
             printf("Failed to start DHCP server\n");
             goto exit;
         }
     } else {
-    	ret = network->dhcp_server_stop(g_dhcps_handle);
+        ret = network->dhcp_server_stop(g_dhcps_handle);
+        g_dhcps_handle = NULL;
     }
 
 exit:
-	artik_release_api_module(network);
-	return (ret == S_OK) ? 0 : -1;
+    artik_release_api_module(network);
+    return (ret == S_OK) ? 0 : -1;
 }
 
 int StartDHCPClient(bool start)
 {
-	artik_error ret = S_OK;
-	artik_network_module *network = (artik_network_module *)
-			artik_request_api_module("network");
+    artik_error ret = S_OK;
+    artik_network_module *network = (artik_network_module *)
+            artik_request_api_module("network");
 
-	if (!network) {
-		printf("Network module is not available\n");
-		return -1;
-	}
+    if (!network) {
+        printf("Network module is not available\n");
+        return -1;
+    }
 
-	if (start) {
-		if (g_dhcpc_handle) {
-	        printf("DHCP client is already started\n");
-	        ret = E_BUSY;
-	        goto exit;
-	    }
+    if (start) {
+        if (g_dhcpc_handle) {
+            printf("DHCP client is already started\n");
+            ret = E_BUSY;
+            goto exit;
+        }
 
-		ret = network->dhcp_client_start(&g_dhcpc_handle, ARTIK_WIFI);
-	} else {
-		if (!g_dhcpc_handle) {
-	        printf("DHCP client is not started\n");
-	        ret = E_NOT_INITIALIZED;
-	        goto exit;
-	    }
+        ret = network->dhcp_client_start(&g_dhcpc_handle, ARTIK_WIFI);
+        if (ret != S_OK) {
+            printf("Failed to start DHCP client (%d)\n", ret);
+            g_dhcpc_handle = NULL;
+            goto exit;
+        }
 
-		ret = network->dhcp_client_stop(g_dhcpc_handle);
-		g_dhcpc_handle = NULL;
-	}
+    } else {
+        if (!g_dhcpc_handle) {
+            printf("DHCP client is not started\n");
+            ret = E_NOT_INITIALIZED;
+            goto exit;
+        }
+
+        ret = network->dhcp_client_stop(g_dhcpc_handle);
+        g_dhcpc_handle = NULL;
+    }
 
 exit:
-	artik_release_api_module(network);
-	return (ret == S_OK) ? 0 : -1;
+    artik_release_api_module(network);
+    return (ret == S_OK) ? 0 : -1;
 }
 
 artik_error StartSoftAP(bool start)
@@ -396,9 +403,13 @@ artik_error StartStationConnection(bool start)
     if (start) {
         struct timespec timeout;
 
-        /* First stop AP mode if set */
-        if (g_mode == ARTIK_WIFI_MODE_AP)
+        if (g_mode == ARTIK_WIFI_MODE_STATION) {
+            ret = E_BUSY;
+            goto exit;
+        } else if (g_mode == ARTIK_WIFI_MODE_AP) {
+            /* First stop AP mode if set */
             StartSoftAP(false);
+        }
 
         /* Start station mode */
         ret = wifi->init(ARTIK_WIFI_MODE_STATION);
@@ -445,12 +456,20 @@ artik_error StartStationConnection(bool start)
             goto exit;
         }
 
+        usleep(500 * 1000);
+
         /* Start DHCP client to get an IP address */
         if (StartDHCPClient(true)) {
             ret = E_BUSY;
             goto exit;
         }
     } else {
+
+        if (g_mode != ARTIK_WIFI_MODE_STATION) {
+            ret = E_NOT_INITIALIZED;
+            goto exit;
+        }
+
         wifi->set_scan_result_callback(NULL, NULL);
         wifi->set_connect_callback(NULL, NULL);
         wifi->disconnect();

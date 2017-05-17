@@ -10,22 +10,10 @@
 
 #include "artik_onboarding.h"
 
-static int onboard_main(int argc, char *argv[])
+enum ServiceState current_service_state = STATE_IDLE;
+
+static pthread_addr_t start_onboarding(pthread_addr_t arg)
 {
-    int ret = 0;
-
-    if ((argc > 1) && !strcmp(argv[1], "reset")) {
-        ResetConfiguration();
-        printf("Onboarding configuration was reset. Reboot the board"
-                " to return to onboarding mode\n");
-        goto exit;
-    }
-
-    if (InitConfiguration() != S_OK) {
-        ret = -1;
-        goto exit;
-    }
-
     /* If we already have Wifi credentials, try to connect to the hotspot */
     if (strlen(wifi_config.ssid) > 0) {
         if (StartStationConnection(true) == S_OK) {
@@ -51,17 +39,52 @@ static int onboard_main(int argc, char *argv[])
 
     /* If Cloud connection failed, start the onboarding service */
     if (StartSoftAP(true) != S_OK) {
-        ret = -1;
         goto exit;
     }
 
     if (StartWebServer(true, API_SET_WIFI) != S_OK) {
         StartSoftAP(false);
-        ret = -1;
         goto exit;
     }
 
     printf("ARTIK Onboarding Service started\n");
+    current_service_state = STATE_ONBOARDING;
+
+exit:
+    return NULL;
+}
+
+static int onboard_main(int argc, char *argv[])
+{
+    int ret = 0;
+    pthread_t tid;
+
+    if ((argc > 1) && !strcmp(argv[1], "reset")) {
+        ResetConfiguration();
+        printf("Onboarding configuration was reset. Reboot the board"
+                " to return to onboarding mode\n");
+        goto exit;
+    }
+
+    /* If already in onboarding mode, do nothing */
+    if (current_service_state == STATE_ONBOARDING)
+        goto exit;
+
+    if (current_service_state == STATE_CONNECTED) {
+        printf("Device is currently connected to cloud. To return to\n"
+               "onboarding mode, delete the device from your ARTIK Cloud\n"
+               "account then reboot the board.\n");
+        goto exit;
+    }
+
+    if (InitConfiguration() != S_OK) {
+        ret = -1;
+        goto exit;
+    }
+
+    pthread_create(&tid, NULL, start_onboarding, NULL);
+    pthread_setname_np(tid, "onboarding start");
+    pthread_join(tid, NULL);
 
 exit:
     return ret;
@@ -104,7 +127,7 @@ int artik_onboarding_main(int argc, char *argv[])
     tash_cmdlist_install(atk_cmds);
 #endif
 
-    //onboard_main(argc, argv);
+    onboard_main(argc, argv);
 
     return 0;
 }

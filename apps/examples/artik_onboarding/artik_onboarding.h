@@ -2,6 +2,17 @@
 #define _ARTIK_ONBOARDING_H_
 
 /*
+ * Service states
+ */
+enum ServiceState {
+    STATE_IDLE,
+    STATE_ONBOARDING,
+    STATE_CONNECTED
+};
+
+extern enum ServiceState current_service_state;
+
+/*
  * WiFi related exports
  */
 #define SSID_MAX_LEN            64
@@ -64,5 +75,27 @@ artik_error StartWebServer(bool, enum ApiSet);
 artik_error InitConfiguration(void);
 artik_error SaveConfiguration(void);
 artik_error ResetConfiguration(void);
+
+#define API_ERROR_OK              "0"
+#define API_ERROR_INVALID_JSON    "100"
+#define API_ERROR_INTERNAL        "102"
+#define API_ERROR_INVALID_PARAMS  "106"
+#define API_ERROR_INVALID_UUID    "108"
+#define API_ERROR_MISSING_PARAM   "109"
+#define API_ERROR_COMMUNICATION   "111"
+#define API_ERROR_CLOUD_BASE      50000
+
+#define RESP_ERROR_OK             "{\"error\":false," \
+                                   "\"error_code\":0," \
+                                   "\"reason\":\"none\"}"
+
+#define RESP_ERROR(code,reason)     "{\"error\":true," \
+                                     "\"error_code\":"code"," \
+                                     "\"reason\":\""reason"\"}"
+
+#define RESP_ERROR_EXTRA(code, reason, extra) "{\"error\":false," \
+                                               "\"error_code\":"code"," \
+                                               "\"reason\":\""reason"\"," \
+                                               extra"}"
 
 #endif /* _ARTIK_ONBOARDING_H_ */

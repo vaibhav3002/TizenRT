@@ -15,12 +15,10 @@
 #define AKC_DEFAULT_DTID    "dt2d93bdb9c8fa446eb4a35544e66150f7"
 #define LED_ID              ARTIK_A053_XGPIO20
 
-#define RESP_OK_TPL         "{\"error\":false,\"reason\":\"none\"}"
-#define RESP_ERROR_TPL      "{\"error\":true,\"reason\":\"%s\"}"
-#define RESP_INVALID_TPL    "{\"error\":true,\"reason\":\"Invalid response from the cloud\"}"
-#define RESP_UNAVAIL_TPL    "{\"error\":true,\"reason\":\"Cloud module is not available\"}"
-#define RESP_CERT_SN_TPL    "{\"error\":true,\"reason\":\"Serial number could not be found\"}"
-#define RESP_PIN_TPL        "{\"error\":false,\"reason\":\"none\",\"pin\":\"%s\"}"
+#define RESP_ERROR_TPL      RESP_ERROR("%d", "%s")
+#define RESP_INVALID_TPL    RESP_ERROR(API_ERROR_COMMUNICATION, "Device Communication Error")
+#define RESP_UNAVAIL_TPL    RESP_ERROR(API_ERROR_INTERNAL, "Internal Software Module error")
+#define RESP_PIN_TPL        RESP_ERROR_EXTRA(API_ERROR_OK, "none", "\"pin\":\"%s\"")
 
 struct ArtikCloudConfig cloud_config;
 
@@ -59,6 +57,25 @@ static void set_led_state(bool state)
     artik_release_api_module(gpio);
 }
 
+static pthread_addr_t wifi_onboarding_start(pthread_addr_t arg)
+{
+    StartCloudWebsocket(false);
+
+    if (StartSoftAP(true) != S_OK) {
+        return NULL;
+    }
+
+    if (StartWebServer(true, API_SET_WIFI) != S_OK) {
+        StartSoftAP(false);
+        return NULL;
+    }
+
+    printf("ARTIK Onboarding Service started\n");
+    current_service_state = STATE_ONBOARDING;
+
+    return NULL;
+}
+
 static void cloud_websocket_rx_cb(void *user_data, void *result)
 {
     cJSON *msg, *error, *code, *type, *data, *actions, *action;
@@ -86,7 +103,9 @@ static void cloud_websocket_rx_cb(void *user_data, void *result)
                      * to onboarding service.
                      */
                     ResetConfiguration();
-                    StartCloudWebsocket(false);
+                    pthread_t tid;
+                    pthread_create(&tid, NULL, wifi_onboarding_start, NULL);
+                    pthread_detach(tid);
                 }
             }
         }
@@ -156,6 +175,7 @@ static pthread_addr_t websocket_start_cb(void *arg)
     }
 
     cloud->websocket_set_receive_callback(g_ws_handle, cloud_websocket_rx_cb, NULL);
+    current_service_state = STATE_CONNECTED;
 
 exit:
     artik_release_api_module(cloud);
@@ -184,6 +204,7 @@ static pthread_addr_t websocket_stop_cb(void *arg)
 
     g_ws_handle = NULL;
     artik_release_api_module(cloud);
+    current_service_state = STATE_IDLE;
 
  exit:
     return NULL;
@@ -400,7 +421,7 @@ static pthread_addr_t start_sdr_registration_cb(void *arg)
     ret = cloud->sdr_start_registration(cloud_config.device_type_id, vdid, &response);
     if (ret != S_OK) {
         if (response) {
-            cJSON *error, *message;
+            cJSON *error, *message, *code;
 
             /* We got an error from the cloud, parse the JSON to extract the error message */
             jresp = cJSON_Parse(response);
@@ -409,12 +430,16 @@ static pthread_addr_t start_sdr_registration_cb(void *arg)
                 if (error && (error->type == cJSON_Object)) {
                     message = cJSON_GetObjectItem(error, "message");
                     if (message && (message->type == cJSON_String)) {
-                        int len = strlen(RESP_ERROR_TPL) + strlen(message->valuestring);
-                        *resp = zalloc(len + 1);
-                        if (*resp == NULL)
+                        code = cJSON_GetObjectItem(error, "code");
+                        if (code && (code->type == cJSON_Number)) {
+                            int len = strlen(RESP_ERROR_TPL) + 5 + strlen(message->valuestring);
+                            *resp = zalloc(len + 1);
+                            if (*resp == NULL)
+                                goto exit;
+                            snprintf(*resp, len, RESP_ERROR_TPL, API_ERROR_CLOUD_BASE + code->valueint,
+                                    message->valuestring);
                             goto exit;
-                        snprintf(*resp, len, RESP_ERROR_TPL, message->valuestring);
-                        goto exit;
+                        }
                     }
                 }
             }
@@ -511,7 +536,7 @@ static pthread_addr_t complete_sdr_registration_cb(void *arg)
     ret = cloud->sdr_complete_registration(cloud_config.reg_id, cloud_config.reg_nonce, &response);
     if (ret != S_OK) {
         if (response) {
-            cJSON *error, *message;
+            cJSON *error, *message, *code;
 
             /* We got an error from the cloud, parse the JSON to extract the error message */
             jresp = cJSON_Parse(response);
@@ -520,13 +545,17 @@ static pthread_addr_t complete_sdr_registration_cb(void *arg)
                 if (error && (error->type == cJSON_Object)) {
                     message = cJSON_GetObjectItem(error, "message");
                     if (message && (message->type == cJSON_String)) {
-                        int len = strlen(RESP_ERROR_TPL) + strlen(message->valuestring);
-                        status = 400;
-                        *resp = zalloc(len + 1);
-                        if (*resp == NULL)
+                        code = cJSON_GetObjectItem(error, "code");
+                        if (code && (code->type == cJSON_Number)) {
+                            int len = strlen(RESP_ERROR_TPL) + 5 + strlen(message->valuestring);
+                            status = 400;
+                            *resp = zalloc(len + 1);
+                            if (*resp == NULL)
+                                goto exit;
+                            snprintf(*resp, len, RESP_ERROR_TPL, API_ERROR_CLOUD_BASE + code->valueint,
+                                    message->valuestring);
                             goto exit;
-                        snprintf(*resp, len, RESP_ERROR_TPL, message->valuestring);
-                        goto exit;
+                        }
                     }
                 }
             }
@@ -546,7 +575,7 @@ static pthread_addr_t complete_sdr_registration_cb(void *arg)
                         did = cJSON_GetObjectItem(data, "did");
                         if (did && (did->type == cJSON_String)) {
                             strncpy(cloud_config.device_id, did->valuestring, AKC_DID_LEN);
-                            *resp = strdup(RESP_OK_TPL);
+                            *resp = strdup(RESP_ERROR_OK);
                             goto exit;
                         }
                     }

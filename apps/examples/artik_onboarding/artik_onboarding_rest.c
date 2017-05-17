@@ -21,6 +21,21 @@
 #define API_CLOUD                   API_VERSION"/artikcloud"
 #define API_CLOUD_REGISTRATION      API_VERSION"/artikcloud/registration"
 
+#define RESP_ERROR_INVALID_JSON_TPL   RESP_ERROR(API_ERROR_INVALID_JSON, "Invalid JSON")
+#define RESP_ERROR_INVALID_PARAMS_TPL RESP_ERROR(API_ERROR_INVALID_PARAMS, "Invalid Parameters")
+#define RESP_ERROR_INVALID_UUID_TPL   RESP_ERROR(API_ERROR_INVALID_UUID, "Invalid UUID")
+#define RESP_ERROR_MISSING_PARAM_TPL  RESP_ERROR(API_ERROR_MISSING_PARAM, "Input argument missing in JSON")
+
+/*
+ * We cannot enable HTTPs without a proper certificate, as iOS "AFNetworking"
+ * library requires a non self-signed certificate to process HTTPs requests.
+ */
+//#define WEBSERVER_ENABLE_HTTPS
+
+#ifdef WEBSERVER_ENABLE_HTTPS
+/*
+ * Self-signed certificate used when HTTPs webserver is enabled
+ */
 const char artik_srv_crt_rsa[] =
     "-----BEGIN CERTIFICATE-----\r\n"
     "MIICUzCCAbwCCQDhLm/KWqdqXzANBgkqhkiG9w0BAQUFADBuMQswCQYDVQQGEwJV\r\n"
@@ -60,6 +75,7 @@ const char artik_srv_key_rsa[] =
  *
  * "sha256//w1qMo+N6/Njby2tpIc/5tG4CIMiAeC4hH/X9jgOEFMM"
  */
+#endif
 
 static struct http_server_t *https_server = NULL;
 
@@ -105,15 +121,14 @@ static void set_akc_callback(struct http_client_t *client, struct http_req_messa
 
     config = cJSON_Parse(msg->entity);
     if (!config) {
-        strncpy(resp, "{\"error\":true,\"reason\":\"Malformed JSON\"}", sizeof(resp)-1);
+        strncpy(resp, RESP_ERROR_INVALID_JSON_TPL, sizeof(resp)-1);
         goto exit;
     }
 
     tmp = cJSON_GetObjectItem(config, "did");
     if (tmp) {
         if (strlen(tmp->valuestring) != AKC_DID_LEN) {
-            snprintf(resp, sizeof(resp)-1, "{\"error\":true,\"reason\":\"'did' should be %d characters long\"}",
-                    AKC_DID_LEN);
+            strncpy(resp, RESP_ERROR_INVALID_UUID_TPL, sizeof(resp)-1);
             goto exit;
         }
         strncpy(cloud_config.device_id, tmp->valuestring, AKC_DID_LEN);
@@ -122,8 +137,7 @@ static void set_akc_callback(struct http_client_t *client, struct http_req_messa
     tmp = cJSON_GetObjectItem(config, "token");
     if (tmp) {
         if (strlen(tmp->valuestring) != AKC_TOKEN_LEN) {
-            snprintf(resp, sizeof(resp)-1, "{\"error\":true,\"reason\":\"'token' should be %d characters long\"}",
-                    AKC_TOKEN_LEN);
+            strncpy(resp, RESP_ERROR_INVALID_UUID_TPL, sizeof(resp)-1);
             goto exit;
         }
         strncpy(cloud_config.device_token, tmp->valuestring, AKC_TOKEN_LEN);
@@ -132,7 +146,7 @@ static void set_akc_callback(struct http_client_t *client, struct http_req_messa
     SaveConfiguration();
 
     start_websocket = true;
-    strncpy(resp, "{\"error\":false,\"reason\":\"none\"}", sizeof(resp)-1);
+    strncpy(resp, RESP_ERROR_OK, sizeof(resp)-1);
 
 exit:
     itoa(strlen(resp), length, 10);
@@ -150,8 +164,10 @@ exit:
         cJSON_Delete(config);
 
     /* Send response before starting Cloud websocket */
-    if (start_websocket)
-        StartCloudWebsocket(true);
+    if (start_websocket) {
+        if (StartCloudWebsocket(true) == S_OK)
+            printf("ARTIK Cloud connection started\n");
+    }
 }
 
 static void get_ap_callback(struct http_client_t *client, struct http_req_message *req)
@@ -184,6 +200,38 @@ static void get_ap_callback(struct http_client_t *client, struct http_req_messag
         free(body);
 }
 
+static pthread_addr_t cloud_onboarding_start(pthread_addr_t arg)
+{
+    StartWebServer(false, API_SET_WIFI);
+    printf("Start station connection\n");
+    if (StartStationConnection(true) != S_OK) {
+        printf("Failed to start connection to AP, returning to AP mode\n");
+        if (StartSoftAP(true) != S_OK) {
+            printf("Failed to start AP mode\n");
+            return NULL;
+        }
+
+        if (StartWebServer(true, API_SET_WIFI) != S_OK) {
+            StartSoftAP(false);
+            printf("Failed to start Web server\n");
+        }
+
+        return NULL;
+    }
+
+    printf("Start MDNS service\n");
+    StartMDNSService(true);
+
+    printf("Start webserver cloud API\n");
+    if (StartWebServer(true, API_SET_CLOUD) != S_OK) {
+        StartSoftAP(false);
+        printf("Failed to start Web server\n");
+        return NULL;
+    }
+
+    return 0;
+}
+
 static void set_config_callback(struct http_client_t *client, struct http_req_message *msg)
 {
     struct http_keyvalue_list_t headers;
@@ -198,7 +246,7 @@ static void set_config_callback(struct http_client_t *client, struct http_req_me
     config = cJSON_Parse(msg->entity);
     if (!config) {
         status = 400;
-        strncpy(resp, "{\"error\":true,\"reason\":\"Malformed JSON\"}", sizeof(resp)-1);
+        strncpy(resp, RESP_ERROR_INVALID_JSON_TPL, sizeof(resp)-1);
         goto exit;
     }
 
@@ -206,8 +254,7 @@ static void set_config_callback(struct http_client_t *client, struct http_req_me
     if (tmp) {
         if (tmp->type != cJSON_String) {
             status = 400;
-            strncpy(resp, "{\"error\":true,\"reason\":\"JSON parameter 'ssid' should "
-                    "be a string\"}", sizeof(resp)-1);
+            strncpy(resp, RESP_ERROR_INVALID_PARAMS_TPL, sizeof(resp)-1);
             goto exit;
         }
         WifiResetConfig();
@@ -218,15 +265,13 @@ static void set_config_callback(struct http_client_t *client, struct http_req_me
     if (tmp) {
         if (tmp->type != cJSON_String) {
             status = 400;
-            strncpy(resp, "{\"error\":true,\"reason\":\"JSON parameter 'security' should "
-                    "be a string\"}", sizeof(resp)-1);
+            strncpy(resp, RESP_ERROR_INVALID_PARAMS_TPL, sizeof(resp)-1);
             goto exit;
         }
 
         if (strcmp(tmp->valuestring, "Secure") && strcmp(tmp->valuestring, "Open")) {
             status = 400;
-            strncpy(resp, "{\"error\":true,\"reason\":\"JSON parameter 'security' should "
-                    "be a 'Secure' or 'Open'\"}", sizeof(resp)-1);
+            strncpy(resp, RESP_ERROR_INVALID_PARAMS_TPL, sizeof(resp)-1);
             goto exit;
         }
 
@@ -238,8 +283,7 @@ static void set_config_callback(struct http_client_t *client, struct http_req_me
         if (tmp) {
             if (tmp->type != cJSON_String) {
                 status = 400;
-                strncpy(resp, "{\"error\":true,\"reason\":\"JSON parameter 'passphrase' should "
-                        "be a string\"}", sizeof(resp)-1);
+                strncpy(resp, RESP_ERROR_INVALID_PARAMS_TPL, sizeof(resp)-1);
                 goto exit;
             }
 
@@ -251,8 +295,7 @@ static void set_config_callback(struct http_client_t *client, struct http_req_me
     if (tmp) {
         if ((tmp->type != cJSON_True) && (tmp->type != cJSON_False)) {
             status = 400;
-            strncpy(resp, "{\"error\":true,\"reason\":\"JSON parameter 'connect' should "
-                    "be true or false\"}", sizeof(resp)-1);
+            strncpy(resp, RESP_ERROR_INVALID_PARAMS_TPL, sizeof(resp)-1);
             goto exit;
         }
 
@@ -260,15 +303,13 @@ static void set_config_callback(struct http_client_t *client, struct http_req_me
             /* Check if proper config has been provided */
             if (!(wifi_config.ssid[0])) {
                 status = 400;
-                strncpy(resp, "{\"error\":true,\"reason\":\"Provide 'ssid' parameter "
-                        "before trying to connect\"}", sizeof(resp)-1);
+                strncpy(resp, RESP_ERROR_MISSING_PARAM_TPL, sizeof(resp)-1);
                 goto exit;
             }
 
             if (wifi_config.secure && !(wifi_config.passphrase[0])) {
                 status = 400;
-                strncpy(resp, "{\"error\":true,\"reason\":\"Provide 'passphrase' parameter for "
-                        "secure access point before trying to connect\"}", sizeof(resp)-1);
+                strncpy(resp, RESP_ERROR_MISSING_PARAM_TPL, sizeof(resp)-1);
                 goto exit;
             }
 
@@ -278,7 +319,7 @@ static void set_config_callback(struct http_client_t *client, struct http_req_me
 
     SaveConfiguration();
 
-    strncpy(resp, "{\"error\":false,\"reason\":\"none\"}", sizeof(resp)-1);
+    strncpy(resp, RESP_ERROR_OK, sizeof(resp)-1);
 
 exit:
 
@@ -293,34 +334,11 @@ exit:
     }
 
     if (start_connection) {
-        sleep(1);
-        StartWebServer(false, API_SET_WIFI);
-        sleep(1);
-        if (StartStationConnection(true) != S_OK) {
-            printf("Failed to start connection to AP, returning to AP mode\n");
-            if (StartSoftAP(true) != S_OK) {
-                printf("Failed to start AP mode\n");
-                goto out;
-            }
-
-            if (StartWebServer(true, API_SET_WIFI) != S_OK) {
-                StartSoftAP(false);
-                printf("Failed to start Web server\n");
-            }
-
-            goto out;
-        }
-
-        StartMDNSService(true);
-
-        if (StartWebServer(true, API_SET_CLOUD) != S_OK) {
-            StartSoftAP(false);
-            printf("Failed to start Web server\n");
-            goto out;
-        }
+        pthread_t tid;
+        pthread_create(&tid, NULL, cloud_onboarding_start, NULL);
+        pthread_detach(tid);
    }
 
-out:
     if (config)
         cJSON_Delete(config);
 }
@@ -339,18 +357,25 @@ static void get_akc_registration_callback(struct http_client_t *client, struct h
 
     itoa(strlen(resp), length, 10);
     http_keyvalue_list_init(&headers);
-    if (status == 200) {
-        http_keyvalue_list_add(&headers, "Content-type", "application/json");
-        http_keyvalue_list_add(&headers, "Content-Length", length);
-    }
+    http_keyvalue_list_add(&headers, "Content-type", "application/json");
+    http_keyvalue_list_add(&headers, "Content-Length", length);
     http_keyvalue_list_add(&headers, "Connection", "close");
 
-    if (http_send_response(client, 200, resp, &headers) < 0) {
+    if (http_send_response(client, 200, resp, &headers) < 0)
         printf("Failed to send response\n");
-    }
 
     if (resp)
         free(resp);
+}
+
+static pthread_addr_t start_websocket(pthread_addr_t arg)
+{
+    StartMDNSService(false);
+    StartWebServer(false, API_SET_CLOUD);
+    if (StartCloudWebsocket(true) == S_OK)
+        printf("ARTIK Cloud connection started\n");
+
+    return NULL;
 }
 
 static void put_akc_registration_callback(struct http_client_t *client, struct http_req_message *msg)
@@ -367,10 +392,8 @@ static void put_akc_registration_callback(struct http_client_t *client, struct h
 
     itoa(strlen(resp), length, 10);
     http_keyvalue_list_init(&headers);
-    if (status == 200) {
-        http_keyvalue_list_add(&headers, "Content-type", "application/json");
-        http_keyvalue_list_add(&headers, "Content-Length", length);
-    }
+    http_keyvalue_list_add(&headers, "Content-type", "application/json");
+    http_keyvalue_list_add(&headers, "Content-Length", length);
     http_keyvalue_list_add(&headers, "Connection", "close");
 
     if (http_send_response(client, 200, resp, &headers) < 0) {
@@ -388,103 +411,70 @@ static void put_akc_registration_callback(struct http_client_t *client, struct h
         memset(cloud_config.reg_id, 0, AKC_REG_ID_LEN + 1);
         memset(cloud_config.reg_nonce, 0, AKC_REG_NONCE_LEN + 1);
         SaveConfiguration();
-        StartMDNSService(false);
-        StartWebServer(false, API_SET_CLOUD);
-        sleep(1);
-        StartCloudWebsocket(true);
+
+        pthread_t tid;
+        pthread_create(&tid, NULL, start_websocket, NULL);
+        pthread_detach(tid);
     }
 }
 
-static pthread_addr_t httpserver_cb(void *arg)
-{
-   // struct ssl_config_t ssl_config;
-    enum ApiSet api_set = *((enum ApiSet *)arg);
-
-    https_server = http_server_init(80);
-
-    if (!https_server) {
-        printf("Failed to initialize web server\n");
-        return NULL;
-    }
-/*
-    memset(&ssl_config, 0 , sizeof(ssl_config));
-    ssl_config.auth_mode = MBEDTLS_SSL_VERIFY_NONE;
-    ssl_config.dev_cert = (char *)artik_srv_crt_rsa;
-    ssl_config.dev_cert_len  = sizeof(artik_srv_crt_rsa);
-    ssl_config.private_key = (char *)artik_srv_key_rsa;
-    ssl_config.private_key_len = sizeof(artik_srv_key_rsa);
-
-    if (http_tls_init(https_server, &ssl_config)) {
-        printf("Failed to initialize SSL configuration\n");
-        http_server_release(&https_server);
-        return NULL;
-    }
-*/
-    if (api_set & API_SET_WIFI) {
-        http_server_register_cb(https_server, HTTP_METHOD_GET, API_WIFI_ACCESS_POINTS, get_ap_callback);
-        http_server_register_cb(https_server, HTTP_METHOD_POST, API_WIFI_CONFIG, set_config_callback);
-    }
-    if (api_set & API_SET_CLOUD) {
-        http_server_register_cb(https_server, HTTP_METHOD_GET, API_CLOUD, get_akc_callback);
-        http_server_register_cb(https_server, HTTP_METHOD_POST, API_CLOUD, set_akc_callback);
-        http_server_register_cb(https_server, HTTP_METHOD_GET, API_CLOUD_REGISTRATION, get_akc_registration_callback);
-        http_server_register_cb(https_server, HTTP_METHOD_PUT, API_CLOUD_REGISTRATION, put_akc_registration_callback);
-    }
-
-    if (http_server_start(https_server)) {
-        printf("Failed to start web server\n");
-        http_server_release(&https_server);
-        return NULL;
-    }
-    printf("Web server started\n");
-
-    return NULL;
-}
-
-artik_error StartWebServer(bool start, enum ApiSet set)
+artik_error StartWebServer(bool start, enum ApiSet api_set)
 {
     if (start) {
-        static pthread_t tid;
-        pthread_attr_t attr;
-        int status;
-        struct sched_param sparam;
-
-        if (https_server) {
-            printf("Web server is already started\n");
+#ifdef WEBSERVER_ENABLE_HTTPS
+        struct ssl_config_t ssl_config;
+        https_server = http_server_init(443);
+#else
+        https_server = http_server_init(80);
+#endif
+        if (!https_server) {
+            printf("Failed to initialize web server\n");
             return E_BUSY;
         }
 
-        status = pthread_attr_init(&attr);
-        if (status != 0)
-        {
-          printf("fail to initialize webserver thread\n");
-          return E_BUSY;
+#ifdef WEBSERVER_ENABLE_HTTPS
+        memset(&ssl_config, 0 , sizeof(ssl_config));
+        ssl_config.auth_mode = MBEDTLS_SSL_VERIFY_NONE;
+        ssl_config.dev_cert = (char *)artik_srv_crt_rsa;
+        ssl_config.dev_cert_len  = sizeof(artik_srv_crt_rsa);
+        ssl_config.private_key = (char *)artik_srv_key_rsa;
+        ssl_config.private_key_len = sizeof(artik_srv_key_rsa);
+
+        if (http_tls_init(https_server, &ssl_config)) {
+            printf("Failed to initialize SSL configuration\n");
+            http_server_release(&https_server);
+            return E_BUSY;
+        }
+#endif
+        if (api_set & API_SET_WIFI) {
+            http_server_register_cb(https_server, HTTP_METHOD_GET, API_WIFI_ACCESS_POINTS, get_ap_callback);
+            http_server_register_cb(https_server, HTTP_METHOD_POST, API_WIFI_CONFIG, set_config_callback);
+        }
+        if (api_set & API_SET_CLOUD) {
+            http_server_register_cb(https_server, HTTP_METHOD_GET, API_CLOUD, get_akc_callback);
+            http_server_register_cb(https_server, HTTP_METHOD_POST, API_CLOUD, set_akc_callback);
+            http_server_register_cb(https_server, HTTP_METHOD_GET, API_CLOUD_REGISTRATION, get_akc_registration_callback);
+            http_server_register_cb(https_server, HTTP_METHOD_PUT, API_CLOUD_REGISTRATION, put_akc_registration_callback);
         }
 
-        sparam.sched_priority = 100;
-        status = pthread_attr_setschedparam(&attr, &sparam);
-        status = pthread_attr_setschedpolicy(&attr, SCHED_RR);
-        status = pthread_attr_setstacksize(&attr, 1024 * 8);
-
-        status = pthread_create(&tid, &attr, httpserver_cb, &set);
-        if (status < 0) {
-          printf("failed to start webserver thread\n");
-          return E_BUSY;
+        if (http_server_start(https_server)) {
+            printf("Failed to start web server\n");
+            http_server_release(&https_server);
+            return E_BUSY;
         }
 
-        pthread_setname_np(tid, "webserver");
-        pthread_join(tid, NULL);
+        printf("Web server started\n");
     } else {
         if (!https_server) {
             printf("Web server is not started\n");
             return E_NOT_INITIALIZED;
         }
 
-        if (set & API_SET_WIFI) {
+        if (api_set & API_SET_WIFI) {
             http_server_deregister_cb(https_server, HTTP_METHOD_GET, API_WIFI_ACCESS_POINTS);
             http_server_deregister_cb(https_server, HTTP_METHOD_POST, API_WIFI_CONFIG);
         }
-        if (set & API_SET_CLOUD) {
+        if (api_set & API_SET_CLOUD) {
             http_server_deregister_cb(https_server, HTTP_METHOD_GET, API_CLOUD);
             http_server_deregister_cb(https_server, HTTP_METHOD_POST, API_CLOUD);
             http_server_deregister_cb(https_server, HTTP_METHOD_GET, API_CLOUD_REGISTRATION);
@@ -493,10 +483,9 @@ artik_error StartWebServer(bool start, enum ApiSet set)
 
         http_server_stop(https_server);
         http_server_release(&https_server);
-        printf("Web server stopped\n");
         https_server = NULL;
+        printf("Web server stopped\n");
     }
 
     return S_OK;
 }
-
